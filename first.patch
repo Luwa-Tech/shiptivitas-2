@@ -1,0 +1,187 @@
+From 9b0ba63cee2cc7f85bcd66a09bc815fc4b679bf6 Mon Sep 17 00:00:00 2001
+From: Yusuf Umar Faruq <111466842+Luwa-Tech@users.noreply.github.com>
+Date: Sun, 10 Nov 2024 13:47:55 +0000
+Subject: [PATCH] Implemented drag-n-drop backend feature
+
+---
+ clients.db   | Bin 8192 -> 8192 bytes
+ package.json |   2 +-
+ server.js    |  75 ++++++++++++++++++++++++++++++++++++++++++---------
+ 3 files changed, 64 insertions(+), 13 deletions(-)
+
+diff --git a/clients.db b/clients.db
+index 8ba54853a51784d74beb91f9096afc1675c427ea..fd65dac89a2707c3063a826d8cb5e17e52f7e228 100644
+GIT binary patch
+delta 148
+zcmZp0XmFSy%{XDAj5GfP2ED36UIqpRM*b8A{*;Y{pZO*y@-O8wV&yX8s^HJ#*WD~2
+zpv1-D!pO#8?X1i=xk1X7k#%ypybB}m=Dkv0jEpRkIb<9enKygM%wytYV&LD!;B4(I
+qJGoxUm^V2;w;(6AB-O#5g^gkIJGo8{phX~AkTFI)Flpvg-c$gEV<h(g
+
+delta 122
+zcmZp0XmFSy&1f}I#+l!WK~E=umw|zSkw1ljKV@U#XTHga{7bniShy<q%lWnW_iYvs
+zP~w`{;L5@8%*e)I?W{ccqnz>N94YS2d!@V>8CfTD$T%{xZ1$3w$Hc}AG>E}*vY~wE
+Z<O(SlZXm~jg^fWqP?>SEsk|j4696hs8?XQX
+
+diff --git a/package.json b/package.json
+index 609a185..423a6ed 100644
+--- a/package.json
++++ b/package.json
+@@ -1,4 +1,3 @@
+-
+ {
+   "name": "shiptivity-api",
+   "version": "1.0.0",
+@@ -24,6 +23,7 @@
+   "homepage": "https://github.com/insidesherpa/shiptivity-2#readme",
+   "dependencies": {
+     "better-sqlite3": "^11.3.0",
++    "cors": "^2.8.5",
+     "express": "^4.16.4"
+   },
+   "devDependencies": {
+diff --git a/server.js b/server.js
+index 7ba16d7..6fa5967 100644
+--- a/server.js
++++ b/server.js
+@@ -1,12 +1,14 @@
+ import express from 'express';
+ import Database from 'better-sqlite3';
++import cors from 'cors'
+ 
+ const app = express();
+ 
++app.use(cors());
+ app.use(express.json());
+ 
+ app.get('/', (req, res) => {
+-  return res.status(200).send({'message': 'SHIPTIVITY API. Read documentation to see API docs'});
++  return res.status(200).send({ 'message': 'SHIPTIVITY API. Read documentation to see API docs' });
+ });
+ 
+ // We are keeping one connection alive for the rest of the life application for simplicity
+@@ -26,8 +28,8 @@ const validateId = (id) => {
+     return {
+       valid: false,
+       messageObj: {
+-      'message': 'Invalid id provided.',
+-      'long_message': 'Id can only be integer.',
++        'message': 'Invalid id provided.',
++        'long_message': 'Id can only be integer.',
+       },
+     };
+   }
+@@ -36,8 +38,8 @@ const validateId = (id) => {
+     return {
+       valid: false,
+       messageObj: {
+-      'message': 'Invalid id provided.',
+-      'long_message': 'Cannot find client with that id.',
++        'message': 'Invalid id provided.',
++        'long_message': 'Cannot find client with that id.',
+       },
+     };
+   }
+@@ -55,8 +57,8 @@ const validatePriority = (priority) => {
+     return {
+       valid: false,
+       messageObj: {
+-      'message': 'Invalid priority provided.',
+-      'long_message': 'Priority can only be positive integer.',
++        'message': 'Invalid priority provided.',
++        'long_message': 'Priority can only be positive integer.',
+       },
+     };
+   }
+@@ -92,7 +94,7 @@ app.get('/api/v1/clients', (req, res) => {
+  * GET /api/v1/clients/{client_id} - get client by id
+  */
+ app.get('/api/v1/clients/:id', (req, res) => {
+-  const id = parseInt(req.params.id , 10);
++  const id = parseInt(req.params.id, 10);
+   const { valid, messageObj } = validateId(id);
+   if (!valid) {
+     res.status(400).send(messageObj);
+@@ -102,7 +104,7 @@ app.get('/api/v1/clients/:id', (req, res) => {
+ 
+ /**
+  * Update client information based on the parameters provided.
+- * When status is provided, the client status will be changed
++ * When status is provided, the client status will be changed - done
+  * When priority is provided, the client priority will be changed with the rest of the clients accordingly
+  * Note that priority = 1 means it has the highest priority (should be on top of the swimlane).
+  * No client on the same status should not have the same priority.
+@@ -115,7 +117,7 @@ app.get('/api/v1/clients/:id', (req, res) => {
+  *
+  */
+ app.put('/api/v1/clients/:id', (req, res) => {
+-  const id = parseInt(req.params.id , 10);
++  const id = parseInt(req.params.id, 10);
+   const { valid, messageObj } = validateId(id);
+   if (!valid) {
+     res.status(400).send(messageObj);
+@@ -126,11 +128,60 @@ app.put('/api/v1/clients/:id', (req, res) => {
+   const client = clients.find(client => client.id === id);
+ 
+   /* ---------- Update code below ----------*/
++  if (!client) {
++    res.status(404).json({ message: `Client with id: ${id} do not exist` });
++    return;
++  }
+ 
++  const prevStatus = client.status;
+ 
++  // If the client's status has changed, update both the previous and new statuses.
++  if (status && status !== prevStatus) {
++    db.prepare('UPDATE clients SET status = ? WHERE id = ?').run(status, id);
+ 
+-  return res.status(200).send(clients);
+-});
++    clients = db.prepare('select * from clients').all();
++
++    const clientsFromPrevStatus = filterClients(clients, prevStatus);
++
++    // Reassign priority values for clients in the previous status group, ensuring no duplicates.
++    clientsFromPrevStatus.forEach((client, index) => {
++      db.prepare('UPDATE clients SET priority = ? WHERE id = ?').run(index + 1, client.id);
++    });
++
++    // Get a list of clients from the new status group, which includes the updated client.
++    const clientsFromNewStatus = filterClients(clients, status);
++
++    clientsFromNewStatus.forEach((client, index) => {
++      db.prepare('UPDATE clients SET priority = ? WHERE id = ?').run(index + 1, client.id);
++    });
++  }
++
++  if (priority) {
++    db.prepare('UPDATE clients SET priority = ? WHERE id = ?').run(priority, id);
++    clients = db.prepare('select * from clients').all();
++
++    const clientsFromCurrentStatus = filterClients(clients, status);
++
++    let updatedPriority = 1;
++    clientsFromCurrentStatus.forEach((client) => {
++      // Skip the client we just updated
++      if (client.id !== id) {
++        // If `updatedPriority` matches the target priority, skip it by increasing `updatedPriority`
++        const adjustedPriority = updatedPriority === priority ? ++updatedPriority : updatedPriority;
++        db.prepare('UPDATE clients SET priority = ? WHERE id = ?').run(adjustedPriority, client.id);
++        // Move to the next priority value.
++        updatedPriority++;
++      }
++    });
++  }
++
++  clients = db.prepare('select * from clients where status = ?').all(status);
++  return res.status(200).send(clients.sort((a, b) => a.priority - b.priority));
++})
++
++const filterClients = (clients, status) => {
++  return clients.filter(client => client.status === status).sort((a, b) => a.priority - b.priority);
++};
+ 
+ app.listen(3001);
+ console.log('app running on port ', 3001);
+-- 
+2.46.2
+

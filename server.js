@@ -136,8 +136,8 @@ app.put('/api/v1/clients/:id', (req, res) => {
   const prevStatus = client.status;
 
   // If the client's status has changed, update both the previous and new statuses.
-  if (status && priority && status !== prevStatus) {
-    db.prepare('UPDATE clients SET priority = ?, status = ? WHERE id = ?').run(priority, status, id);
+  if (status && status !== prevStatus) {
+    db.prepare('UPDATE clients SET status = ? WHERE id = ?').run(status, id);
 
     clients = db.prepare('select * from clients').all();
 
@@ -156,7 +156,7 @@ app.put('/api/v1/clients/:id', (req, res) => {
     });
   }
 
-  if (priority && status === prevStatus) {
+  if (priority) {
     db.prepare('UPDATE clients SET priority = ? WHERE id = ?').run(priority, id);
     clients = db.prepare('select * from clients').all();
 
